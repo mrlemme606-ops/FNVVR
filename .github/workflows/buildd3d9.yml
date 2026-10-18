@@ -1,0 +1,72 @@
+name: Build d3d9.dll (x86)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show what is being built
+        run: |
+          {
+            echo "### Building"
+            echo "- Branch: \`${GITHUB_REF_NAME}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Branch: ${GITHUB_REF_NAME}"
+          echo "Commit: ${GITHUB_SHA}"
+
+      - name: Check that the Polaris patch files are in this branch
+        run: |
+          missing=0
+          check() {
+            if grep -q "$2" "$1"; then
+              echo "OK       $1 contains '$2'"
+            else
+              echo "::error file=$1::MISSING '$2'. This branch does not have the latest patch files. Upload the newest polaris-compat-files.zip to THIS branch."
+              missing=1
+            fi
+          }
+          check src/vulkan/vulkan_loader.h        hasMaintenance5
+          check src/dxvk/dxvk_device_info.cpp     requiredPushDataSize
+          check src/dxvk/dxvk_device_info.cpp     legacyExt
+          check src/dxvk/dxvk_pipelayout.cpp      "bytes of push data"
+          check src/dxvk/dxvk_shader.cpp          legacyModules
+          check src/dxvk/dxvk_cmdlist.h           vkCmdBindIndexBuffer
+          exit $missing
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y glslang-tools g++-mingw-w64-i686 gcc-mingw-w64-i686 ninja-build python3-pip
+          pip install meson
+          # DXVK needs the posix thread model of mingw
+          sudo update-alternatives --set i686-w64-mingw32-gcc /usr/bin/i686-w64-mingw32-gcc-posix
+          sudo update-alternatives --set i686-w64-mingw32-g++ /usr/bin/i686-w64-mingw32-g++-posix
+
+      - name: Configure
+        run: meson setup --buildtype release --strip --cross-file build-win32.txt build
+
+      - name: Build
+        run: ninja -C build
+
+      - name: Check that the patch is inside the built DLL
+        run: |
+          dll=build/src/d3d9/d3d9.dll
+          ls -l "$dll"
+          fail=0
+          for s in "bytes of push data" "Failed to create shader module" "VK_EXT_load_store_op_none"; do
+            if grep -qa "$s" "$dll"; then echo "OK       DLL contains '$s'"; else echo "::error::DLL is missing '$s'"; fail=1; fi
+          done
+          exit $fail
+
+      - name: Upload d3d9.dll
+        uses: actions/upload-artifact@v4
+        with:
+          name: d3d9-x86-run${{ github.run_number }}
+          path: build/src/d3d9/d3d9.dll
