@@ -801,8 +801,16 @@ namespace dxvk {
       }
     }
 
-    if (!m_featuresEnabled.extDescriptorHeap.descriptorHeap && m_properties.core.properties.limits.maxPushConstantsSize < MaxTotalPushDataSize)
-      return str::format("Device does not support ", MaxTotalPushDataSize, " of push data");
+    // Independent pipeline layouts, which are only used with graphics pipeline
+    // libraries, reserve the maximum amount of push data for every stage. All
+    // other layouts pack the push data blocks that shaders actually use, so
+    // devices without graphics pipeline libraries only need the 128 bytes of
+    // push constants that every Vulkan device is required to support.
+    uint32_t requiredPushDataSize = m_featuresEnabled.extGraphicsPipelineLibrary.graphicsPipelineLibrary
+      ? uint32_t(MaxTotalPushDataSize) : 128u;
+
+    if (!m_featuresEnabled.extDescriptorHeap.descriptorHeap && m_properties.core.properties.limits.maxPushConstantsSize < requiredPushDataSize)
+      return str::format("Device does not support ", requiredPushDataSize, " of push data");
 
     return std::nullopt;
   }
