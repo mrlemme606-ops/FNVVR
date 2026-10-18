@@ -1,0 +1,36 @@
+name: Build d3d9.dll (x86)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y glslang-tools g++-mingw-w64-i686 gcc-mingw-w64-i686 ninja-build python3-pip
+          pip install meson
+          # DXVK needs the posix thread model of mingw
+          sudo update-alternatives --set i686-w64-mingw32-gcc /usr/bin/i686-w64-mingw32-gcc-posix
+          sudo update-alternatives --set i686-w64-mingw32-g++ /usr/bin/i686-w64-mingw32-g++-posix
+
+      - name: Show the patched line
+        run: grep -n "LOAD_STORE_OP_NONE" src/dxvk/dxvk_device_info.h
+
+      - name: Configure
+        run: meson setup --buildtype release --strip --cross-file build-win32.txt build
+
+      - name: Build
+        run: ninja -C build
+
+      - name: Upload d3d9.dll
+        uses: actions/upload-artifact@v4
+        with:
+          name: d3d9-x86
+          path: build/src/d3d9/d3d9.dll
